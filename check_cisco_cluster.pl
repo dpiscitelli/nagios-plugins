@@ -2,15 +2,15 @@
 #
 # ============================== SUMMARY =====================================
 #
-# Program : check_juniper_isg1000.pl
+# Program : check_cisco_cluster.pl
 # Version : 1.0
-# Date    : 2011/12/12
+# Date    : 2011/12/15
 # Authors : piscitelli.david@gmail.com
 #           
 # Licence : GPL - summary below, full text at http://www.fsf.org/licenses/gpl.txt
 #
 # =========================== PROGRAM LICENSE =================================
-# check_juniper_isg1000.pl, monitor Cisco Catalyst devices
+# check_cisco_cluster.pl, monitor Cisco Cluster FW
 # Copyright (C) David Piscitelli
 #
 # This program is free software; you can redistribute it and/or
@@ -58,55 +58,52 @@ our %ERRORS=('OK'=>0,'WARNING'=>1,'CRITICAL'=>2,'UNKNOWN'=>3);
 our $Version='1.0';
 
 #  OIDs Indexes
-my $netscreenNsrpGeneral 	= '.1.3.6.1.4.1.3224.6.1';
-my $nsrpVsdMemberTable		= '.1.3.6.1.4.1.3224.6.2.2';
-my $nsIfName				= '.1.3.6.1.4.1.3224.9.1.1.2';
-my $nsIfStatus				= '.1.3.6.1.4.1.3224.9.1.1.5';
-my $nsIfFlowInByte			= '.1.3.6.1.4.1.3224.9.3.1.3';
-my $nsIfFlowOutByte			= '.1.3.6.1.4.1.3224.9.3.1.5';
-my $nsIfMonTrMngDrop		= '.1.3.6.1.4.1.3224.9.4.1.7';
+my $cfwHardwareStatusTable 	= '.1.3.6.1.4.1.9.9.147.1.2.1.1';
 
-my %hash_nsrpVsdMemberStatus_status = ( 0 => {	STATE => 'undefined', NAGIOS_STATE => 'CRITICAL' },
-										1 => {	STATE => 'init', NAGIOS_STATE => 'CRITICAL' },
-										2 => {	STATE => 'master', NAGIOS_STATE => 'OK' },
-										3 => {	STATE => 'primary-backup', NAGIOS_STATE => 'OK' },
-										4 => {	STATE => 'backup', NAGIOS_STATE => 'WARNING' },
-										5 => {	STATE => 'ineligible', NAGIOS_STATE => 'CRITICAL' },
-										6 => {	STATE => 'inoperable', NAGIOS_STATE => 'CRITICAL' },
+my %hash_cfwHardwareType = ( 1 => 'memory',		
+							 2 => 'disk',
+							 3 => 'power',
+							 4 => 'netInterface',
+							 5 => 'cpu',
+							 6 => 'primaryUnit',
+							 7 => 'secondaryUnit',
+							 8 => 'other',
 );
 
-my %hash_nsIfStatuss_states = ( 0 => {	STATE => 'down', NAGIOS_STATE => 'CRITICAL' },
-								1 => {	STATE => 'up', NAGIOS_STATE => 'OK' },
-								2 => {	STATE => 'ready', NAGIOS_STATE => 'WARNING' },
-								3 => {	STATE => 'inactive', NAGIOS_STATE => 'CRITICAL' }
-);
+my %hash_cfwHardwareStatusValue = ( 1 => {	STATE => 'other', NAGIOS_STATE => 'WARNING' },
+									2 => {	STATE => 'up', NAGIOS_STATE => 'OK' },
+									3 => {	STATE => 'down', NAGIOS_STATE => 'CRITICAL' },
+									4 => {	STATE => 'error', NAGIOS_STATE => 'CRITICAL' },
+									5 => {	STATE => 'overTemp', NAGIOS_STATE => 'CRITICAL' },
+									6 => {	STATE => 'busy', NAGIOS_STATE => 'WARNING' },
+									7 => {	STATE => 'noMedia', NAGIOS_STATE => 'WARNING' },
+									8 => {	STATE => 'backup', NAGIOS_STATE => 'OK' },
+									9 => {	STATE => 'active', NAGIOS_STATE => 'OK' },
+									10 => {	STATE => 'standby', NAGIOS_STATE => 'OK' },
+);									
 
 # Standard options
-my $o_host = 		undef; 	# hostname
-my $o_timeout =  	undef;  # Timeout (Default 10) 
-my $o_help =		undef; 	# wan't some help ?
-my $o_verb =		0;		# verbose mode
-my $o_version =		undef;	# print version
-my $o_warn_opt =   	undef;  # warning options
-my $o_crit_opt = 	undef;  # critical options
-my $o_dirstore =   undef;  
+my $o_host 			= undef; 	# hostname
+my $o_timeout 		= undef;  # Timeout (Default 10) 
+my $o_help 			= undef; 	# wan't some help ?
+my $o_verb 			= 0;		# verbose mode
+my $o_version 		= undef;	# print version
+my $o_warn_opt 		= undef;  # warning options
+my $o_crit_opt 		= undef;  # critical options
+my $o_dirstore 		= undef;  
 # Login and other options specific to SNMP
-my $o_port =		161;    # SNMP port
-my $o_octetlength =	undef;	# SNMP Message size parameter (Makina Corpus contrib)
-my $o_community =	undef; 	# community
-my $o_version2	=	undef;	# use snmp v2c
-my $o_login =		undef;	# Login for snmpv3
-my $o_passwd =		undef;	# Pass for snmpv3
-my $v3protocols =	undef;	# V3 protocol list.
-my $o_authproto =	'md5';	# Auth protocol
-my $o_privproto =	'des';	# Priv protocol
-my $o_privpass = 	undef;	# priv password
-my $o_check_cluster = 0;
-my $o_state = undef;
-my $o_check_status = undef;
-my $o_check_traffic = undef;
-my $o_check_packets = undef;
-my $o_interfaces = undef;
+my $o_port 			= 161;    # SNMP port
+my $o_octetlength 	= undef;	# SNMP Message size parameter (Makina Corpus contrib)
+my $o_community 	= undef; 	# community
+my $o_version2		= undef;	# use snmp v2c
+my $o_login 		= undef;	# Login for snmpv3
+my $o_passwd 		= undef;	# Pass for snmpv3
+my $v3protocols 	= undef;	# V3 protocol list.
+my $o_authproto 	= 'md5';	# Auth protocol
+my $o_privproto 	= 'des';	# Priv protocol
+my $o_privpass 		= undef;	# priv password
+my $o_check_all 	= 0;
+my $o_long_output	= 0;
 
 # Misc variables
 my $output = "";
@@ -454,12 +451,8 @@ GetOptions(
     'w:s'   			=> \$o_warn_opt,    'warning:s'   		=> \$o_warn_opt,
     'c:s'   			=> \$o_crit_opt,    'critical:s'   		=> \$o_crit_opt,
     'o:i'   			=> \$o_octetlength, 'octetlength:i' 	=> \$o_octetlength,
-	'check-cluster'		=> \$o_check_cluster,
-	'state:s'			=> \$o_state,
-	'traffic'			=> \$o_check_traffic,
-	'status'			=> \$o_check_status,
-	'packet-drop'		=> \$o_check_packets,
-	'n:s'				=> \$o_interfaces,
+	'check-all'			=> \$o_check_all,
+	'long-output'		=> \$o_long_output,
 );
 #print "Verb : $o_verb\n";
 $o_verb = 0 if not $o_verb;
@@ -509,25 +502,6 @@ if (defined ($o_octetlength) && (isnnum($o_octetlength) || $o_octetlength > 6553
 	print_usage(); 
 	exit $ERRORS{"UNKNOWN"};
 }
-if ( $o_check_cluster and not $o_state ){
-	print "option --state is not defined : master/primary-backup\n";
-	exit $ERRORS{UNKNOWN};
-}
-if ( $o_state ){
-	$o_state = lc $o_state;
-	if ( ($o_state ne "master") and ($o_state ne "primary-backup") ) {
-		print "option --state should be : master/primary-backup\n";
-		exit $ERRORS{UNKNOWN};
-	}
-}
-$o_interfaces = "FOO_ALL_FOO" unless $o_interfaces;
-
-$o_dirstore = "/opt/nagios/var" unless $o_dirstore;
-if ( not -d $o_dirstore."/".$o_host ){
-	mkdir $o_dirstore."/".$o_host
-		or die "Impossible to create ".$o_dirstore."/".$o_host." directory";
-	$o_dirstore = $o_dirstore."/".$o_host;
-}
 
 # Check gobal timeout if snmp screws up
 if (defined($TIMEOUT)) {
@@ -564,161 +538,61 @@ if (defined($o_octetlength)) {
 	verb(" new max octets:: $oct_test",2,$o_verb);
 }
 
-if ( $o_check_cluster ){
-	# Firt get the local id of this cluster node
-	verb("Get Node Cluster Id",1,$o_verb);
-	my %hash_cluster_node = get_table_by_id($session,$netscreenNsrpGeneral,$o_verb);	
-	my $local_id = $hash_cluster_node{'2.0'};
-	verb("Local Id : $local_id",1,$o_verb);
-	# Get Cluster Members status
-	verb("Get Clusters Members status",1,$o_verb);
-	my %hash_cluster_members = get_table_by_id($session,$nsrpVsdMemberTable,$o_verb);	
-	my $id_klum = undef;
-	foreach my $id (keys %hash_cluster_members ){
-		if ( $hash_cluster_members{$id} == $local_id ){
-			# Get the SNMP id of the node
-			$id_klum = $id;
-		}
-	}
-	# Now get the status of the node and compare it to the attempted status
-	$id_klum =~ m/\d+\.\d+\.(\d+)/;
-	my $node_status = $hash_cluster_members{'1.3.'.$1};
-	verb("Node status : $node_status",2,$o_verb);
-	if ( $hash_nsrpVsdMemberStatus_status{$node_status}{STATE} ne $o_state ){
-		$output = "Member Status is ".$hash_nsrpVsdMemberStatus_status{$node_status}{STATE}.", should be ".$o_state." ";
-		$exit_code = "CRITICAL";
-	}
-	else {
-		$output = "Member Status is OK : ".$hash_nsrpVsdMemberStatus_status{$node_status}{STATE}." ";
-	}
+# First get informations of the cluster units
+verb("Get All Informations",1,$o_verb);
+my %hash_infos_all = get_table_by_id($session,$cfwHardwareStatusTable,$o_verb);	
+my %hash_infos_sort = ();
+my $id_root = undef;
+my $id_type = undef;
+my $id_info_snmp = undef;
+foreach my $id (keys %hash_infos_all ){
+	$id =~ m/(\d+)\.(\d+)\.(\d+)/;
+	$id_root = $1;
+	$id_info_snmp = $2;
+	$id_type = $3;
+	$hash_infos_sort{$id_root}{$id_type}{$id_info_snmp} = $hash_infos_all{$id};
 }
-elsif ( $o_check_status ){
-	# Get Interfaces by name
-	verb("Get Interfaces by name",1,$o_verb);
-	my %hash_interface_names = get_table_by_id($session,$nsIfName,$o_verb);	
-	# Get Interface status
-	verb("Get Interface status",1,$o_verb);
-	my %hash_interface_status = get_table_by_id($session,$nsIfStatus,$o_verb);	
-	foreach my $id ( keys %hash_interface_names ){
-		# Check only physical interfaces... named etherneti/j
-		if ( $hash_interface_names{$id} =~ m/^ethernet\d+\/\d+$/ ){
-			if ( $o_interfaces eq "FOO_ALL_FOO" or $hash_interface_names{$id} =~ m/$o_interfaces/ ){
-				verb("Check Interface: ".$hash_interface_names{$id},2,$o_verb);
-				if ( $hash_nsIfStatuss_states{$hash_interface_status{$id}}{NAGIOS_STATE} eq "CRITICAL" ){
-					$exit_code = "CRITICAL";
-					$output .= "Int(".$hash_interface_names{$id}.":".$hash_nsIfStatuss_states{$hash_interface_status{$id}}{STATE}.") ";
-				}
-				elsif ( $hash_nsIfStatuss_states{$hash_interface_status{$id}}{NAGIOS_STATE} eq "WARNING" ){
-					$exit_code = "WARNING" if $exit_code eq "OK";
-					$output .= " Int(".$hash_interface_names{$id}.":".$hash_nsIfStatuss_states{$hash_interface_status{$id}}{STATE}.") ";
-				}
+
+# Now, do the job
+foreach $id_root (sort keys %hash_infos_sort ){
+	foreach $id_type (sort keys %{$hash_infos_sort{$id_root}}){
+		verb("ID root: ".$id_root.", Type: ".$hash_cfwHardwareType{$id_type}.", Info: ".$hash_infos_sort{$id_root}{$id_type}{2}.", Status: ".$hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE}.", Status Detail: ".$hash_infos_sort{$id_root}{$id_type}{4},2,$o_verb);
+		if ( ($hash_cfwHardwareType{$id_type} eq "primaryUnit") and ($hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE} ne "active") ){
+			# Push information to output, if this is "this device"
+			if ( $hash_infos_sort{$id_root}{$id_type}{2} =~ m/\(this device\)/ ){
+				$output .= "This device (".$hash_cfwHardwareType{$id_type}.") is ".$hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE}."; ";
+				$exit_code = "CRITICAL";
 			}
 		}
-	}
-	if ( $exit_code eq "OK" ){
-		$output = "All Interfaces are UP";
-	}
-}
-elsif ( $o_check_traffic ){
-	my $delta_time = undef;
-	my $count_in = undef;
-	my $count_out = undef;
-	my $history_traffic_in = $o_dirstore."/isg1000_in_".$o_host;
-	my $history_traffic_out = $o_dirstore."/isg1000_out_".$o_host;
-	# Get Interfaces by name
-	verb("Get Interfaces by name",1,$o_verb);
-	my %hash_interface_names = get_table_by_id($session,$nsIfName,$o_verb);	
-	verb("Get Traffic IN",1,$o_verb);
-	my %hash_traffic_in = get_table_by_id($session,$nsIfFlowInByte,$o_verb);
-	verb("Get Traffic OUT",1,$o_verb);
-	my %hash_traffic_out = get_table_by_id($session,$nsIfFlowOutByte,$o_verb);
-	# Get Interface status
-	verb("Get Interface status",1,$o_verb);
-	my %hash_interface_status = get_table_by_id($session,$nsIfStatus,$o_verb);	
-	if ( -s $history_traffic_in and -s $history_traffic_out ){
-		# We have history, it can work
-		my %hash_traffic_in_old = get_file($history_traffic_in);
-		my %hash_traffic_out_old = get_file($history_traffic_out);
-		foreach my $id ( keys %hash_interface_names ){
-			# Check only physical interfaces... named etherneti/j.... and UP
-			if ( ($hash_interface_names{$id} =~ m/^ethernet\d+\/\d+$/) and ($hash_interface_status{$id} == 1) ){
-				if ( $o_interfaces eq "FOO_ALL_FOO" or $hash_interface_names{$id} =~ m/$o_interfaces/ ){
-					verb("Check Interface: ".$hash_interface_names{$id},2,$o_verb);
-					$delta_time = time - $hash_traffic_in_old{$id}{TIME};
-					$count_in = sprintf "%.2f",  ( ($hash_traffic_in{$id} - $hash_traffic_in_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
-					$count_out = sprintf "%.2f",  ( ($hash_traffic_out{$id} - $hash_traffic_out_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
-					# Formating output
-					$perfs .= " 'traffic_in_".$hash_interface_names{$id}."'=".$count_in."kbps;;;; 'traffic_out_".$hash_interface_names{$id}."'=".$count_out."kbps;;;;";
-					if ( $o_crit_opt and ( ($count_in >= $o_crit_opt) or ($count_out >= $o_crit_opt)) ) {
-						$exit_code = "CRITICAL";
-						$output .= "traffic port ".$hash_interface_names{$id}." (".$count_in."kbps/".$count_out."kbps); ";
-					}
-					elsif ( $o_warn_opt and (($count_in >= $o_warn_opt) or ($count_out >= $o_warn_opt)) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "traffic port ".$hash_interface_names{$id}." (".$count_in."kbps/".$count_out."kbps); ";
-					}
-				}
+		elsif ( ($hash_cfwHardwareType{$id_type} eq "secondaryUnit") and ($hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE} ne "standby") ){
+			# Push information to output, if this is "this device"
+			if ( $hash_infos_sort{$id_root}{$id_type}{2} =~ m/\(this device\)/){
+				$output .= "This device (".$hash_cfwHardwareType{$id_type}.") is ".$hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE}."; ";
+				$exit_code = "CRITICAL";
 			}
 		}
-		if ( $exit_code eq "OK" ){
-			$output = "Traffic OK";
-		}
-	}
-	else {
-		# no data, put the current data in history files and get stuff next time
-		$exit_code = "OK";
-		$output = "NO USABLE DATA, maybe next time";
-	}
-	# Finally push new values
-	push_file($history_traffic_in, \%hash_traffic_in);
-	push_file($history_traffic_out, \%hash_traffic_out);
-}
-elsif ( $o_check_packets ){
-	my $delta_time = undef;
-	my $count = undef;
-	my $history_packet_drop = $o_dirstore."/isg1000_packets_".$o_host;
-	# Get Interfaces by name
-	verb("Get Interfaces by name",1,$o_verb);
-	my %hash_interface_names = get_table_by_id($session,$nsIfName,$o_verb);	
-	verb("Get Drop packets",1,$o_verb);
-	my %hash_packet_drop = get_table_by_id($session,$nsIfMonTrMngDrop,$o_verb);
-	# Get Interface status
-	verb("Get Interface status",1,$o_verb);
-	my %hash_interface_status = get_table_by_id($session,$nsIfStatus,$o_verb);	
-	if ( -s $history_packet_drop ){
-		# We have history, it can work
-		my %hash_packet_drop_old = get_file($history_packet_drop);
-		foreach my $id ( keys %hash_interface_names ){
-			# Check only physical interfaces... named etherneti/j.... and UP
-			if ( ($hash_interface_names{$id} =~ m/^ethernet\d+\/\d+$/) and ($hash_interface_status{$id} == 1) ){
-				if ( $o_interfaces eq "FOO_ALL_FOO" or $hash_interface_names{$id} =~ m/$o_interfaces/ ){
-					verb("Check Interface: ".$hash_interface_names{$id},2,$o_verb);
-					$delta_time = time - $hash_packet_drop_old{$id}{TIME};
-					$count = sprintf "%.2f",  ( ($hash_packet_drop{$id} - $hash_packet_drop_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
-					# Formating output
-					$perfs .= " 'drop_".$hash_interface_names{$id}."'=".$count."ps;;;;";
-					if ( $o_crit_opt and  ($count >= $o_crit_opt) ) {
-						$exit_code = "CRITICAL";
-						$output .= "Packet drop ".$hash_interface_names{$id}." (".$count."ps); ";
-					}
-					elsif ( $o_warn_opt and ($count >= $o_warn_opt) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "Packet drop ".$hash_interface_names{$id}." (".$count."ps); ";
-					}
+		elsif ( $o_check_all ) {
+			# This is another kind of hardware, check it
+			if ( $hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{NAGIOS_STATE} ne "OK" ){
+				if ( $exit_code eq "OK" ){ 
+					$exit_code = $hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{NAGIOS_STATE};
 				}
+				elsif ($exit_code eq "WARNING" ){ 
+					$exit_code = $hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{NAGIOS_STATE}; 
+				}
+				$output .= "Device (".$hash_cfwHardwareType{$id_type}.") is ".$hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE}."; ";
+			}
+			elsif ( $o_long_output ) {
+				$output .= "Device (".$hash_cfwHardwareType{$id_type}.") is ".$hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE}."; ";
 			}
 		}
-		if ( $exit_code eq "OK" ){
-			$output = "Packet drop OK";
+		elsif ( $o_long_output ) {
+			$output .= "Device (".$hash_cfwHardwareType{$id_type}.") is ".$hash_cfwHardwareStatusValue{$hash_infos_sort{$id_root}{$id_type}{3}}{STATE}."; ";
 		}
 	}
-	else {
-		# no data, put the current data in history files and get stuff next time
-		$exit_code = "OK";
-		$output = "NO USABLE DATA, maybe next time";
-	}
-	# Finally push new values
-	push_file($history_packet_drop, \%hash_packet_drop);
+}
+if ( $exit_code eq "OK" and not $o_long_output ){
+	$output = "All Units are OK";
 }
 
 print "$exit_code - $output | $perfs\n";
