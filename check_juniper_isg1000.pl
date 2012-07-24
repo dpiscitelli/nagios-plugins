@@ -10,7 +10,7 @@
 # Licence : GPL - summary below, full text at http://www.fsf.org/licenses/gpl.txt
 #
 # =========================== PROGRAM LICENSE =================================
-# check_juniper_isg1000.pl, monitor Cisco Catalyst devices
+# check_juniper_isg1000.pl, 
 # Copyright (C) David Piscitelli
 #
 # This program is free software; you can redistribute it and/or
@@ -66,6 +66,15 @@ my $nsIfFlowInByte			= '.1.3.6.1.4.1.3224.9.3.1.3';
 my $nsIfFlowOutByte			= '.1.3.6.1.4.1.3224.9.3.1.5';
 my $nsIfMonTrMngDrop		= '.1.3.6.1.4.1.3224.9.4.1.7';
 
+# SNMPV2 Mib OIDs
+my $descr_table = '.1.3.6.1.2.1.2.2.1.2';
+my $in_octet_table = '.1.3.6.1.2.1.2.2.1.10';
+my $in_octet_table_64 = '.1.3.6.1.2.1.31.1.1.1.6';
+my $out_octet_table = '.1.3.6.1.2.1.2.2.1.16';
+my $out_octet_table_64 = '.1.3.6.1.2.1.31.1.1.1.10';
+my $if_speed_table = '.1.3.6.1.2.1.2.2.1.5';
+my $if_hspeed_table = '.1.3.6.1.2.1.31.1.1.1.15';
+
 my %hash_nsrpVsdMemberStatus_status = ( 0 => {	STATE => 'undefined', NAGIOS_STATE => 'CRITICAL' },
 										1 => {	STATE => 'init', NAGIOS_STATE => 'CRITICAL' },
 										2 => {	STATE => 'master', NAGIOS_STATE => 'OK' },
@@ -90,6 +99,14 @@ my $o_version =		undef;	# print version
 my $o_warn_opt =   	undef;  # warning options
 my $o_crit_opt = 	undef;  # critical options
 my $o_dirstore =   undef;  
+
+# Misc Options
+my $o_byte = 		0;
+my $o_kilo = 		0;
+my $o_mega = 		0;
+my $o_giga = 		0;
+my $o_high_perf = 	0;
+
 # Login and other options specific to SNMP
 my $o_port =		161;    # SNMP port
 my $o_octetlength =	undef;	# SNMP Message size parameter (Makina Corpus contrib)
@@ -113,7 +130,10 @@ my $output = "";
 my $perfs = "";
 my $exit_code = "OK";
 my %hash_parse_config = ();
-
+my $unit_coef = undef;
+my $unit_string = "";
+my $crit = undef;
+my $warn = undef;
 
 ##########################################################################
 #                                                                        #    
@@ -192,6 +212,17 @@ sub create_snmp_session {
 	return ($sess,$err);
 }
 
+# Keys become values and values become keys
+sub reverse_hash {
+	my $hash_in = shift;
+	
+	my %hash_out = ();
+	foreach my $key (keys %$hash_in){
+		$hash_out{$hash_in->{$key}} = $key;
+	}
+	return %hash_out;
+}	
+
 sub get_table_by_id {
 	my $sess = shift;
 	my $base_oid = shift;
@@ -238,7 +269,9 @@ sub fix_octet_length {
 sub p_version { print "check_snmp_netint version : $Version\n"; }
 
 sub print_usage {
-    print "Usage: $0 [-v] -H <host> (-C <snmp_community> [-2]) | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-N <desc table oid>] -n <name in desc_oid> [-O <comments table OID>] [-i | -a | -D] [-r] [-f[eSyYZ] [-P <previous perf data from nagios \$SERVICEPERFDATA\$>] [-T <previous time from nagios \$LASTSERVICECHECK\$>] [--pcount=<hist size in perf>]] [-k[qBMGu] [-S [intspeed]] -g -w<warn levels> -c<crit levels> -d<delta>] [-o <octet_length>] [-m|-mm] [-t <timeout>] [-s] [--label] [--cisco=[oper,][addoper,][linkfault,][use_portnames|show_portnames]] [--stp[=<expected stp state>]] [-V]\n";
+    print "Usage: $0 [-v] -H <host> (-C <snmp_community> [-2]) | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-w<warn levels>] [-c<crit levels>] [-o <octet_length>] [-t <timeout>] [-V] ";
+	print "[-D] [-B] [-K] [-M] [-G]";
+	print "[--check-cluster --state <master|primary-backup>] [--status] [--packet-drop] [--traffic]\n";
 }
 
 # Return true if arg is a number
@@ -254,9 +287,7 @@ sub isnnum {
 }
 
 sub help {
-   print "\nSNMP Network Interface Monitor for Nagios (check_snmp_netint) v. ",$Version,"\n";
-   print "GPL licence, (c)2004-2007 Patrick Proy, (c)2007-2008 William Leibzon\n";
-   print "contribs by J. Jungmann, S. Probst, R. Leroy, M. Berger\n\n";
+   print "\nSNMP Netscreen Juniper ISG1000 Monitor for Nagios (check_juniper_isg1000.pl) v. ",$Version,"\n";
    print_usage();
    print <<EOT;
 
@@ -294,18 +325,58 @@ sub help {
    Be carefull with network filters. Range 484 - 65535, default are
    usually 1472,1452,1460 or 1440.     
    
--w, --warning=
+-w, --warning
+   Warning threshold for the plugin. It could be:
+	- numbers of packet drop
+	- traffic defined as pourcentage of bandwith
    
--c, --critical=
+-c, --critical
+   Critical threshold for the plugin. It could be:
+	- numbers of packet drop
+	- traffic defined as pourcentage of bandwith
     
--F, --filestore[=<filename>]
-  
-   
 -t, --timeout=INTEGER
    timeout for SNMP in seconds (Default: 5)   
    
 -V, --version
    prints version number
+
+-D, --dir-to-store
+   Directory to store history files. Default is /opt/nagios/var
+
+-B, --byte
+   By default traffic unit and thresholds are in bit/s. You can tell the plugin to use Byte instead.
+
+-K, --kilo
+   Use Kb/s or KB/s for traffic and thresholds
+
+-M, --mega
+   Use Mb/s or MB/s for traffic and thresholds
+
+-G, --giga
+   Use Gb/s or GB/s for traffic and thresholds
+   
+-g, --64bits
+   Use 64 bits counters instead of the standard counters  
+   when checking bandwidth & performance data.
+   
+--check-cluster
+   Check staus of ISG cluster. This option must be used with --state
+
+--state
+   Speficied which state should be this node. Values are master or primary-backup
+
+--traffic
+   Get interfaces traffic
+
+--status
+   Get interfaces status
+
+--packet-drop
+   Get number of packets dropped
+
+-n, --interface
+  Filter by interface name. This is a regexp
 
 EOT
 }
@@ -334,6 +405,7 @@ sub get_file {
 	open FILE, "<$file"
 		or die "Unble to read file $file";
 	while ( my $data = <FILE> ){
+		chomp $data;
 		($key,$time,$value) = split /;/, $data;
 		$hash{$key}{TIME} = $time;
 		$hash{$key}{DATA} = $value;
@@ -439,27 +511,32 @@ sub get_port_list_to_check {
 
 Getopt::Long::Configure ("bundling");
 GetOptions(
- 	'v:i'				=> \$o_verb,		'verbose:i'			=> \$o_verb,
-    'h'     			=> \$o_help,    	'help'        		=> \$o_help,
-    'H:s'   			=> \$o_host,		'hostname:s'		=> \$o_host,
-    'p:i'   			=> \$o_port,   		'port:i'			=> \$o_port,
-    'C:s'   			=> \$o_community,	'community:s'		=> \$o_community,
-	'2'					=> \$o_version2,	'v2c'				=> \$o_version2,
-	'l:s'				=> \$o_login,		'login:s'			=> \$o_login,
-	'x:s'				=> \$o_passwd,		'passwd:s'			=> \$o_passwd,
-	'X:s'				=> \$o_privpass,	'privpass:s'		=> \$o_privpass,
-	'L:s'				=> \$v3protocols,	'protocols:s'		=> \$v3protocols,
-    't:i'   			=> \$o_timeout,    	'timeout:i'			=> \$o_timeout,
-	'V'					=> \$o_version,		'version'			=> \$o_version,
-    'w:s'   			=> \$o_warn_opt,    'warning:s'   		=> \$o_warn_opt,
-    'c:s'   			=> \$o_crit_opt,    'critical:s'   		=> \$o_crit_opt,
-    'o:i'   			=> \$o_octetlength, 'octetlength:i' 	=> \$o_octetlength,
+ 	'v:i'				=> \$o_verb,			'verbose:i'			=> \$o_verb,
+    'h'     			=> \$o_help,    		'help'        		=> \$o_help,
+    'H:s'   			=> \$o_host,			'hostname:s'		=> \$o_host,
+    'p:i'   			=> \$o_port,   			'port:i'			=> \$o_port,
+    'C:s'   			=> \$o_community,		'community:s'		=> \$o_community,
+	'2'					=> \$o_version2,		'v2c'				=> \$o_version2,
+	'l:s'				=> \$o_login,			'login:s'			=> \$o_login,
+	'x:s'				=> \$o_passwd,			'passwd:s'			=> \$o_passwd,
+	'X:s'				=> \$o_privpass,		'privpass:s'		=> \$o_privpass,
+	'L:s'				=> \$v3protocols,		'protocols:s'		=> \$v3protocols,
+    't:i'   			=> \$o_timeout,    		'timeout:i'			=> \$o_timeout,
+	'V'					=> \$o_version,			'version'			=> \$o_version,
+    'w:s'   			=> \$o_warn_opt,    	'warning:s'   		=> \$o_warn_opt,
+    'c:s'   			=> \$o_crit_opt,    	'critical:s'   		=> \$o_crit_opt,
+    'o:i'   			=> \$o_octetlength, 	'octetlength:i' 	=> \$o_octetlength,
+	'B'					=> \$o_byte,			'byte'				=> \$o_byte,
+	'K'					=> \$o_kilo,			'kilo'				=> \$o_kilo,
+	'M'					=> \$o_mega,			'mega'				=> \$o_mega,
+	'G'					=> \$o_giga,			'giga'				=> \$o_giga,
 	'check-cluster'		=> \$o_check_cluster,
 	'state:s'			=> \$o_state,
 	'traffic'			=> \$o_check_traffic,
 	'status'			=> \$o_check_status,
 	'packet-drop'		=> \$o_check_packets,
-	'n:s'				=> \$o_interfaces,
+	'n:s'				=> \$o_interfaces,		'interfaces:s'		=> \$o_interfaces,
+	'g'   				=> \$o_high_perf,    	'64bits'   			=> \$o_high_perf,
 );
 #print "Verb : $o_verb\n";
 $o_verb = 0 if not $o_verb;
@@ -526,8 +603,8 @@ $o_dirstore = "/opt/nagios/var" unless $o_dirstore;
 if ( not -d $o_dirstore."/".$o_host ){
 	mkdir $o_dirstore."/".$o_host
 		or die "Impossible to create ".$o_dirstore."/".$o_host." directory";
-	$o_dirstore = $o_dirstore."/".$o_host;
 }
+$o_dirstore = $o_dirstore."/".$o_host;
 
 # Check gobal timeout if snmp screws up
 if (defined($TIMEOUT)) {
@@ -562,6 +639,28 @@ if (defined($o_octetlength)) {
 	}
 	$oct_test= $session->max_msg_size();
 	verb(" new max octets:: $oct_test",2,$o_verb);
+}
+
+# Calculate the unit ratio
+if ( $o_byte ){
+	$unit_coef = 1;
+	$unit_string = "B/s";
+}
+else {
+	$unit_coef = 8;
+	$unit_string = "b/s";
+}
+if ( $o_kilo ){
+	$unit_coef = $unit_coef / 1024;
+	$unit_string = "K".$unit_string;
+}
+elsif ( $o_mega ){
+	$unit_coef = $unit_coef / (1024 * 1024);
+	$unit_string = "M".$unit_string;
+}
+elsif ( $o_giga ){
+	$unit_coef = $unit_coef / (1024 * 1024 * 1024);
+	$unit_string = "G".$unit_string;
 }
 
 if ( $o_check_cluster ){
@@ -625,37 +724,87 @@ elsif ( $o_check_traffic ){
 	my $count_out = undef;
 	my $history_traffic_in = $o_dirstore."/isg1000_in_".$o_host;
 	my $history_traffic_out = $o_dirstore."/isg1000_out_".$o_host;
+	my $interface_name = "";
+	my $delta_value = 0;
+	my $oid_in = undef;
+	my $oid_out = undef;
+	my $max_bits;
+	if ( $o_high_perf ){
+		$oid_in = $in_octet_table_64;
+		$oid_out = $out_octet_table_64;
+		$max_bits = 18446744073709551616;
+	}
+	else {
+		$oid_in = $in_octet_table;
+		$oid_out = $out_octet_table;
+		$max_bits = 4294967296;
+	}
 	# Get Interfaces by name
 	verb("Get Interfaces by name",1,$o_verb);
 	my %hash_interface_names = get_table_by_id($session,$nsIfName,$o_verb);	
-	verb("Get Traffic IN",1,$o_verb);
-	my %hash_traffic_in = get_table_by_id($session,$nsIfFlowInByte,$o_verb);
-	verb("Get Traffic OUT",1,$o_verb);
-	my %hash_traffic_out = get_table_by_id($session,$nsIfFlowOutByte,$o_verb);
+	my %hash_interfaces_id_by_names = reverse_hash(\%hash_interface_names);
 	# Get Interface status
 	verb("Get Interface status",1,$o_verb);
 	my %hash_interface_status = get_table_by_id($session,$nsIfStatus,$o_verb);	
+	# Now we need informations in the IF-MIB, because traffic informations are wrong in private MIB
+	verb("Get IF-MIB Interfaces by name",1,$o_verb);
+	my %hash_interface_names_ifmib = get_table_by_id($session,$descr_table,$o_verb);	
+	verb("Get IF-MIB Traffic IN",1,$o_verb);
+	my %hash_traffic_in = get_table_by_id($session,$oid_in,$o_verb);
+	verb("Get IF-MIB Traffic OUT",1,$o_verb);
+	my %hash_traffic_out = get_table_by_id($session,$oid_out,$o_verb);
+	my %hash_if_speed = ();
+	if ( $o_crit_opt or $o_warn_opt ){
+		verb("Get IF-MIB Speed Table",1,$o_verb);
+		%hash_if_speed = get_table_by_id($session,$if_speed_table,$o_verb);
+	}
 	if ( -s $history_traffic_in and -s $history_traffic_out ){
 		# We have history, it can work
 		my %hash_traffic_in_old = get_file($history_traffic_in);
 		my %hash_traffic_out_old = get_file($history_traffic_out);
-		foreach my $id ( keys %hash_interface_names ){
-			# Check only physical interfaces... named etherneti/j.... and UP
-			if ( ($hash_interface_names{$id} =~ m/^ethernet\d+\/\d+$/) and ($hash_interface_status{$id} == 1) ){
-				if ( $o_interfaces eq "FOO_ALL_FOO" or $hash_interface_names{$id} =~ m/$o_interfaces/ ){
-					verb("Check Interface: ".$hash_interface_names{$id},2,$o_verb);
+		#print "Unit Coef = $unit_coef\n";
+		foreach my $id ( keys %hash_interface_names_ifmib ){
+			verb("Interface Id=".$id." Name= ".$hash_interface_names_ifmib{$id}."- Old IN: ".$hash_traffic_in_old{$id}{DATA}." New IN: ".$hash_traffic_in{$id},3,$o_verb);
+			verb("Interface Id=".$id." Name= ".$hash_interface_names_ifmib{$id}."- Old OUT: ".$hash_traffic_out_old{$id}{DATA}." New OUT: ".$hash_traffic_out{$id},3,$o_verb);
+			# Calculate sum for each interfaces
+			if ( ($hash_interface_names_ifmib{$id} =~ m/^(ethernet\d+\/\d+)$/) and ($hash_interface_status{$hash_interfaces_id_by_names{$hash_interface_names_ifmib{$id}}} == 1) ){
+				$interface_name = $1;
+				if ( $o_interfaces eq "FOO_ALL_FOO" or $hash_interface_names_ifmib{$id} =~ m/$o_interfaces/ ){
+					verb("Check Interface: ".$interface_name." ==> ".$hash_interface_names_ifmib{$id},3,$o_verb);
 					$delta_time = time - $hash_traffic_in_old{$id}{TIME};
-					$count_in = sprintf "%.2f",  ( ($hash_traffic_in{$id} - $hash_traffic_in_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
-					$count_out = sprintf "%.2f",  ( ($hash_traffic_out{$id} - $hash_traffic_out_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
-					# Formating output
-					$perfs .= " 'traffic_in_".$hash_interface_names{$id}."'=".$count_in."kbps;;;; 'traffic_out_".$hash_interface_names{$id}."'=".$count_out."kbps;;;;";
-					if ( $o_crit_opt and ( ($count_in >= $o_crit_opt) or ($count_out >= $o_crit_opt)) ) {
-						$exit_code = "CRITICAL";
-						$output .= "traffic port ".$hash_interface_names{$id}." (".$count_in."kbps/".$count_out."kbps); ";
+					if ( $hash_traffic_in{$id} >= $hash_traffic_in_old{$id}{DATA} ){
+						$delta_value = $hash_traffic_in{$id} - $hash_traffic_in_old{$id}{DATA};
 					}
-					elsif ( $o_warn_opt and (($count_in >= $o_warn_opt) or ($count_out >= $o_warn_opt)) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "traffic port ".$hash_interface_names{$id}." (".$count_in."kbps/".$count_out."kbps); ";
+					else {
+						$delta_value = $max_bits - $hash_traffic_in_old{$id}{DATA} + $hash_traffic_in{$id};
+					}
+					$count_in = $delta_value / $delta_time  * $unit_coef;
+					$count_in = sprintf "%.2f", $count_in;
+					if ( $hash_traffic_out{$id} >= $hash_traffic_out_old{$id}{DATA} ){
+						$delta_value = $hash_traffic_out{$id} - $hash_traffic_out_old{$id}{DATA};
+					}
+					else {
+						$delta_value = $max_bits - $hash_traffic_out_old{$id}{DATA} + $hash_traffic_out{$id};
+					}
+					$count_out =  $delta_value / $delta_time  * $unit_coef;
+					$count_out = sprintf "%.2f", $count_out;
+					$perfs .= " 'in_".$interface_name."'=".$count_in.$unit_string.";;;; 'out_".$interface_name."'=".$count_out.$unit_string.";;;;";
+					# Fix thresholds to have them in pourcentages of bandwith
+					if ( $o_crit_opt ) {
+						$crit = $o_crit_opt / 100 * $hash_if_speed{$id} * $unit_coef / 8;
+						#print "$o_crit_opt $hash_if_speed{$id} $unit_coef\n";
+					}
+					if ( $o_warn_opt ) {
+						$warn = $o_warn_opt / 100 * $hash_if_speed{$id} * $unit_coef / 8;
+					}
+					verb("Crit threshold:".$crit.", Warn threshold:".$warn,1,$o_verb); 
+					if ( $o_crit_opt and ( ($count_in >= $crit) or ($count_out >= $crit)) ) {
+						$exit_code = "CRITICAL";
+						$output .= "traffic port ".$interface_name." (IN:".$count_in.$unit_string." OUT:".$count_out.$unit_string."); ";
+					}
+					elsif ( $o_warn_opt and (($count_in >= $warn) or ($count_out >= $warn)) ) {
+						$exit_code = "WARNING" if $exit_code eq "OK";
+						$output .= "traffic port ".$interface_name." (IN:".$count_in.$unit_string." OUT:".$count_out.$unit_string."); ";
 					}
 				}
 			}
@@ -677,6 +826,8 @@ elsif ( $o_check_packets ){
 	my $delta_time = undef;
 	my $count = undef;
 	my $history_packet_drop = $o_dirstore."/isg1000_packets_".$o_host;
+	my $interface_name = "";
+	my %hash_interfaces_drop_aggregate = ();
 	# Get Interfaces by name
 	verb("Get Interfaces by name",1,$o_verb);
 	my %hash_interface_names = get_table_by_id($session,$nsIfName,$o_verb);	
@@ -690,22 +841,29 @@ elsif ( $o_check_packets ){
 		my %hash_packet_drop_old = get_file($history_packet_drop);
 		foreach my $id ( keys %hash_interface_names ){
 			# Check only physical interfaces... named etherneti/j.... and UP
-			if ( ($hash_interface_names{$id} =~ m/^ethernet\d+\/\d+$/) and ($hash_interface_status{$id} == 1) ){
+			if ( ($hash_interface_names{$id} =~ m/^(ethernet\d+\/\d+)/) and ($hash_interface_status{$id} == 1) ){
+				$interface_name = $1;
+				if ( not exists($hash_interfaces_drop_aggregate{$interface_name}) ){
+					$hash_interfaces_drop_aggregate{$interface_name}{DROP} = 0;
+				}
 				if ( $o_interfaces eq "FOO_ALL_FOO" or $hash_interface_names{$id} =~ m/$o_interfaces/ ){
 					verb("Check Interface: ".$hash_interface_names{$id},2,$o_verb);
 					$delta_time = time - $hash_packet_drop_old{$id}{TIME};
-					$count = sprintf "%.2f",  ( ($hash_packet_drop{$id} - $hash_packet_drop_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
-					# Formating output
-					$perfs .= " 'drop_".$hash_interface_names{$id}."'=".$count."ps;;;;";
-					if ( $o_crit_opt and  ($count >= $o_crit_opt) ) {
-						$exit_code = "CRITICAL";
-						$output .= "Packet drop ".$hash_interface_names{$id}." (".$count."ps); ";
-					}
-					elsif ( $o_warn_opt and ($count >= $o_warn_opt) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "Packet drop ".$hash_interface_names{$id}." (".$count."ps); ";
-					}
+					$count = sprintf "%.2f",  ( ($hash_packet_drop{$id} - $hash_packet_drop_old{$id}{DATA}) / $delta_time );
+					$hash_interfaces_drop_aggregate{$interface_name}{DROP} += $count;
 				}
+			}
+		}
+		# Now, Formating output
+		foreach my $int (keys %hash_interfaces_drop_aggregate ){
+			$perfs .= " 'drop_".$int."'=".$hash_interfaces_drop_aggregate{$int}{DROP}.";;;;";
+			if ( defined($o_crit_opt) and  ($hash_interfaces_drop_aggregate{$int}{DROP} >= $o_crit_opt) ) {
+				$exit_code = "CRITICAL";
+				$output .= "Packet drop ".$int." (".$hash_interfaces_drop_aggregate{$int}{DROP}."); ";
+			}
+			elsif ( defined($o_warn_opt) and ($hash_interfaces_drop_aggregate{$int}{DROP} >= $o_warn_opt) ) {
+				$exit_code = "WARNING" if $exit_code eq "OK";
+				$output .= "Packet drop ".$int." (".$hash_interfaces_drop_aggregate{$int}{DROP}."); ";
 			}
 		}
 		if ( $exit_code eq "OK" ){

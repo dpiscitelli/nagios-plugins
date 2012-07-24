@@ -64,6 +64,13 @@ our $Version='1.0';
 ############### BASE DIRECTORY FOR TEMP FILE (override this with -F) ########
 my $o_base_dir="/tmp/tmp_Nagios_Alteon.";
 
+# MIBv2 OIDs
+my $inter_table= '.1.3.6.1.2.1.2.2.1';
+my $index_table = '1.3.6.1.2.1.2.2.1.1';
+my $descr_table = '1.3.6.1.2.1.2.2.1.2';
+my $oper_table = '1.3.6.1.2.1.2.2.1.8.';
+my $admin_table = '1.3.6.1.2.1.2.2.1.7.';
+
 # Alteon OIDs Indexes
 my $alteon_real_server_index 				= '.1.3.6.1.4.1.1872.2.5.4.1.1.2.2.1.1';
 my $alteon_virtual_server_index 			= '.1.3.6.1.4.1.1872.2.5.4.1.1.4.2.1.1';
@@ -73,17 +80,17 @@ my $alteon_services_tcp_ports 				= '.1.3.6.1.4.1.1872.2.5.4.1.1.4.5.1.3';
 my $alteon_virtual_server_status			= '.1.3.6.1.4.1.1872.2.5.4.1.1.4.2.1.4';
 my $alteon_virtual_server_desc 				= '.1.3.6.1.4.1.1872.2.5.4.1.1.4.2.1.10';
 my $alteon_virtual_server_addr 				= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.14';
-my $alteon_virtual_server_tot_sess 			= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.3';
+my $alteon_virtual_server_cur_sess 			= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.2';
 my $alteon_virtual_server_high_sess 		= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.5';
-my $alteon_virtual_server_failures_sess 	= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.4';
-my $alteon_virtual_server_octets_sess 		= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.8';
+#my $alteon_virtual_server_failures_sess 	= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.4';
+my $alteon_virtual_server_octets_sess 		= '.1.3.6.1.4.1.1872.2.5.4.2.4.1.13';
 # Alteon RIP OIDs
 my $alteon_real_server_status				= '.1.3.6.1.4.1.1872.2.5.4.1.1.2.2.1.10';
 my $alteon_real_server_desc 				= '.1.3.6.1.4.1.1872.2.5.4.1.1.2.2.1.12';	# The name of the real server
 my $alteon_real_server_addr 				= '.1.3.6.1.4.1.1872.2.5.4.1.1.2.2.1.2';	# IP address of the real server identified by the instance of the slbRealServerIndex.
 my $alteon_real_server_state_by_vip 		= '.1.3.6.1.4.1.1872.2.5.4.3.4.1.6';
 my $alteon_real_server_state 				= '.1.3.6.1.4.1.1872.2.5.4.3.1.1.7';
-my $alteon_real_server_tot_sess 			= '.1.3.6.1.4.1.1872.2.5.4.2.2.1.3';
+my $alteon_real_server_cur_sess 			= '.1.3.6.1.4.1.1872.2.5.4.2.2.1.2';
 my $alteon_real_server_high_sess 			= '.1.3.6.1.4.1.1872.2.5.4.2.2.1.5';
 my $alteon_real_server_failures_sess 		= '.1.3.6.1.4.1.1872.2.5.4.2.2.1.4';
 my $alteon_real_server_octets_sess 			= '.1.3.6.1.4.1.1872.2.5.4.2.2.1.8';
@@ -125,7 +132,7 @@ my $o_verb =		0;		# verbose mode
 my $o_version =		undef;	# print version
 my $o_warn_opt =   	undef;  # warning options
 my $o_crit_opt = 	undef;  # critical options
-my $o_dirstore =   undef;  
+my $o_dirstore =   	undef;  
 # Login and other options specific to SNMP
 my $o_port =		161;    # SNMP port
 my $o_octetlength =	undef;	# SNMP Message size parameter (Makina Corpus contrib)
@@ -137,9 +144,14 @@ my $v3protocols =	undef;	# V3 protocol list.
 my $o_authproto =	'md5';	# Auth protocol
 my $o_privproto =	'des';	# Priv protocol
 my $o_privpass = 	undef;	# priv password
+my $o_ifspeed = undef;
 # Misc Options
+my $o_byte = 		0;
+my $o_kilo = 		0;
+my $o_mega = 		0;
+my $o_giga = 		0;
+
 my $o_long_output = undef;
-my %hash_sessions_stats_type = ( COUNTS => 1, FAILURES => 1, OCTETS => 1);
 
 # Specific Alteon options
 my $o_list = undef;
@@ -149,8 +161,9 @@ my $o_check_rip = undef;
 my $o_check_vrrp = undef;
 my $o_vip_sessions = undef;
 my $o_rip_sessions = undef;
-my $o_check_errors = undef;
-my $o_check_traffic = undef;
+my $o_check_errors = 0;
+my $o_check_traffic = 0;
+my $o_check_status = 0;
 
 # Misc variables
 my $resultp = undef;
@@ -171,18 +184,28 @@ my $id_rip_tmp = "";
 my $sessions_test = undef;
 my $oid_desc = undef;
 my $oid_addr = undef;
-my $oid_tot_sess = undef;
+my $oid_sess = undef;
 my $oid_high_sess = undef;
 my $counts_hist = undef;
 my $hcounts_hist = undef;
 my $failures_hist = undef;
 my $octets_hist = undef;
 my $delta_time = undef;
+my $delta_value = undef;
 my $count_sess = undef;
 my $hcount_sess = undef;
 my $oid_failures_sess = undef;
 my $oid_octets_sess = undef;
 my %hash_status = ();
+my $formated_data = "";
+my $perf_string = "";
+my $output_string = "";
+my $history_file = undef;
+my %hash_sessions = ();
+my %hash_sessions_old = ();
+my $unit_coef = undef;
+my $unit_string = "";
+my $max_bits = undef;
 
 ##########################################################################
 #                                                                        #    
@@ -304,10 +327,12 @@ sub fix_octet_length {
 	verb(" new max octets:: $oct_test",1,$debug);
 }
 
-sub p_version { print "check_snmp_netint version : $Version\n"; }
+sub p_version { print "check_alteon version : $Version\n"; }
 
 sub print_usage {
-    print "Usage: $0 [-v] -H <host> (-C <snmp_community> [-2]) | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-N <desc table oid>] -n <name in desc_oid> [-O <comments table OID>] [-i | -a | -D] [-r] [-f[eSyYZ] [-P <previous perf data from nagios \$SERVICEPERFDATA\$>] [-T <previous time from nagios \$LASTSERVICECHECK\$>] [--pcount=<hist size in perf>]] [-k[qBMGu] [-S [intspeed]] -g -w<warn levels> -c<crit levels> -d<delta>] [-o <octet_length>] [-m|-mm] [-t <timeout>] [-s] [--label] [--cisco=[oper,][addoper,][linkfault,][use_portnames|show_portnames]] [--stp[=<expected stp state>]] [-V]\n";
+    print "Usage: $0 [-v] -H <host> (-C <snmp_community> [-2]) | (-l login -x passwd [-X pass -L <authp>,<privp>)  [-p <port>] [-w<warn levels>] [-c<crit levels>] [-o <octet_length>] [-t <timeout>] [-V] ";
+	print "[-D] [-B] [-K] [-M] [-G] [--list] [--exclude] [--long-output] [--if-speed]";
+	print "--rs-state | --rs-state-by-vip | --vip-sessions <COUNTS,FAILURES,TRAFFIC> | --rip-sessions <COUNTS,FAILURES,TRAFFIC> | --vrrp-state <master,backup> | --status | --errors | --traffic\n";
 }
 
 # Return true if arg is a number
@@ -361,6 +386,7 @@ sub get_file {
 	open FILE, "<$file"
 		or die "Unble to read file $file";
 	while ( my $data = <FILE> ){
+		chomp $data;
 		($key,$time,$value) = split /;/, $data;
 		$hash{$key}{TIME} = $time;
 		$hash{$key}{DATA} = $value;
@@ -370,9 +396,7 @@ sub get_file {
 }
 
 sub help {
-   print "\nSNMP Network Interface Monitor for Nagios (check_snmp_netint) v. ",$Version,"\n";
-   print "GPL licence, (c)2004-2007 Patrick Proy, (c)2007-2008 William Leibzon\n";
-   print "contribs by J. Jungmann, S. Probst, R. Leroy, M. Berger\n\n";
+   print "\nSNMP Alteon Monitor for Nagios (check_alteon) v. ",$Version,"\n";
    print_usage();
    print <<EOT;
 
@@ -410,19 +434,85 @@ sub help {
    Be carefull with network filters. Range 484 - 65535, default are
    usually 1472,1452,1460 or 1440.     
    
--w, --warning=
+-w, --warning
+   Warning threshold for the plugin. It could be:
+	- count
+	- numbers of errors/discards
+	- traffic
    
--c, --critical=
+-c, --critical
+   Critical threshold for the plugin. It could be:
+	- count
+	- number of errors/discards
+	- traffic
     
--F, --filestore[=<filename>]
-  
-   
 -t, --timeout=INTEGER
    timeout for SNMP in seconds (Default: 5)   
    
 -V, --version
    prints version number
 
+-D, --dir-to-store
+   Directory to store history files. Default is /opt/nagios/var
+
+-B, --byte
+   By default traffic unit and thresholds are in bit/s. You can tell the plugin to use Byte instead.
+
+-K, --kilo
+   Use Kb/s or KB/s for traffic and thresholds
+
+-M, --mega
+   Use Mb/s or MB/s for traffic and thresholds
+
+-G, --giga
+   Use Gb/s or GB/s for traffic and thresholds
+
+--list
+   List of VIP or RIP to check, separated by commas. VIP or RIP could be identified by 
+   names or by IPs. 
+   If not used, check all.
+
+--exclude
+   List of VIP or RIP to exclude, separated by commas. VIP or RIP could be identified by 
+   names or by IPs
+
+--rs-state
+   Check the Real Servers status
+
+--rs-state-by-vip
+   Check the Virtual Servers by RIP and by services   
+   
+--vip-sessions
+   Check the VIP sessions. Add those options
+   COUNTS : number of current sessions
+   TRAFFIC: traffic in/out
+ 
+--rip-sessions
+   Check the RIP sessions. Add those options
+   COUNTS : number of current sessions
+   FAILURES: The total number of times that the real server is claimed down
+   TRAFFIC: traffic in/out
+   
+--vrrp-state
+   Check the VRRP virtual router. With this option, you have to specify
+   what is the state of the current host.
+   Correct values are: master/slave
+
+--status
+   Check state of physical interfaces
+
+--errors
+   Check errors/discards of physical interfaces
+
+--traffic
+   Check in/out traffic of physical interfaces    
+
+--long-output
+   Print detailed plugin output
+
+--if-speed
+   Fix interfaces speed. Default is 1Gb/s
+ 
 EOT
 }
 
@@ -538,6 +628,10 @@ GetOptions(
     'c:s'   			=> \$o_crit_opt,    'critical:s'   		=> \$o_crit_opt,
     'o:i'   			=> \$o_octetlength, 'octetlength:i' 	=> \$o_octetlength,
 	'D:s'   			=> \$o_dirstore,   	'dir-to-store:s' 	=> \$o_dirstore,
+	'B'					=> \$o_byte,		'byte'				=> \$o_byte,
+	'K'					=> \$o_kilo,		'kilo'				=> \$o_kilo,
+	'M'					=> \$o_mega,		'mega'				=> \$o_mega,
+	'G'					=> \$o_giga,		'giga'				=> \$o_giga,
 	'list:s' 			=> \$o_list,
 	'exclude:s'			=> \$o_excl,
 	'vip-sessions:s'	=> \$o_vip_sessions,
@@ -547,7 +641,9 @@ GetOptions(
 	'vrrp-state:s'		=> \$o_check_vrrp,
 	'traffic'			=> \$o_check_traffic,
 	'errors'			=> \$o_check_errors,
+	'status'			=> \$o_check_status,
 	'long-output'		=> \$o_long_output,
+	'if-speed:s'		=> \$o_ifspeed,
 );
 #print "Verb : $o_verb\n";
 $o_verb = 0 if not $o_verb;
@@ -599,16 +695,16 @@ if (defined ($o_octetlength) && (isnnum($o_octetlength) || $o_octetlength > 6553
 }
 if ( defined $o_vip_sessions ) {
 	$o_vip_sessions = uc $o_vip_sessions;
-	if ( not exists($hash_sessions_stats_type{$o_vip_sessions}) ){
-		print "Don't understand what you try to retrieve : $o_vip_sessions, just know (COUNTS/FAILURES/OCTETS)\n";
+	if ( $o_vip_sessions ne "COUNTS" and $o_vip_sessions ne "TRAFFIC" ){
+		print "Don't understand what you try to retrieve : $o_vip_sessions, just know (COUNTS/TRAFFIC)\n";
 		print_usage(); 
 		exit $ERRORS{"UNKNOWN"};
 	}
 }
 if ( defined $o_rip_sessions ) {
 	$o_rip_sessions = uc $o_rip_sessions;
-	if ( not exists($hash_sessions_stats_type{$o_rip_sessions}) ){
-		print "Don't understand what you try to retrieve : $o_rip_sessions, just know (COUNTS/FAILURES/OCTETS)\n";
+	if ( $o_rip_sessions ne "COUNTS" and $o_rip_sessions ne "TRAFFIC" and $o_rip_sessions ne "FAILURES"){
+		print "Don't understand what you try to retrieve : $o_rip_sessions, just know (COUNTS/FAILURES/TRAFFIC)\n";
 		print_usage(); 
 		exit $ERRORS{"UNKNOWN"};
 	}
@@ -623,8 +719,13 @@ if ( $o_check_vrrp ){
 	}
 }
 $o_dirstore = "/opt/nagios/var" unless $o_dirstore;
-# Fix the names of history files
+if ( not -d $o_dirstore."/".$o_host ){
+	mkdir $o_dirstore."/".$o_host
+		or die "Impossible to create ".$o_dirstore."/".$o_host." directory";
+}
+$o_dirstore = $o_dirstore."/".$o_host;
 
+# Fix the names of history files
 my $vip_failures_hist = $o_dirstore."/alteon_vip_failures_".$o_host;
 my $vip_octets_hist = $o_dirstore."/alteon_vip_octets_".$o_host;
 my $rip_counts_hist = $o_dirstore."/alteon_rip_counts_".$o_host;
@@ -666,6 +767,33 @@ if (defined($o_octetlength)) {
 	verb(" new max octets:: $oct_test",2,$o_verb);
 }
 
+# Calculate the unit ratio
+if ( $o_byte ){
+	$unit_coef = 1;
+	$unit_string = "B/s";
+}
+else {
+	$unit_coef = 8;
+	$unit_string = "b/s";
+}
+if ( $o_kilo ){
+	$unit_coef = $unit_coef / 1024;
+	$unit_string = "K".$unit_string;
+}
+elsif ( $o_mega ){
+	$unit_coef = $unit_coef / (1024 * 1024);
+	$unit_string = "M".$unit_string;
+}
+elsif ( $o_giga ){
+	$unit_coef = $unit_coef / (1024 * 1024 * 1024);
+	$unit_string = "G".$unit_string;
+}
+
+# Fix IfSpeed against unit ratio
+$o_ifspeed = 1024 * 1024 * 1024 unless $o_ifspeed;
+$o_ifspeed = $o_ifspeed * $unit_coef;
+
+
 if ( $o_vip_sessions or $o_rip_sessions){
 	if ( $o_vip_sessions ){
 		verb("Check VIPs sessions",1,$o_verb);
@@ -674,13 +802,10 @@ if ( $o_vip_sessions or $o_rip_sessions){
 		$sessions_test = $o_vip_sessions;
 		$oid_desc = $alteon_virtual_server_desc;
 		$oid_addr = $alteon_virtual_server_addr;
-		$oid_tot_sess = $alteon_virtual_server_tot_sess;
+		$oid_sess = $alteon_virtual_server_cur_sess;
 		$oid_high_sess = $alteon_virtual_server_high_sess;
-		$oid_failures_sess = $alteon_virtual_server_failures_sess;
 		$oid_octets_sess = $alteon_virtual_server_octets_sess;
-		$counts_hist = $o_dirstore."/alteon_vip_counts_".$o_host;
 		$hcounts_hist = $o_dirstore."/alteon_vip_hcounts_".$o_host;
-		$failures_hist = $o_dirstore."/alteon_vip_failures_".$o_host;
 		$octets_hist = $o_dirstore."/alteon_vip_octets_".$o_host;
 	}
 	else {
@@ -690,11 +815,10 @@ if ( $o_vip_sessions or $o_rip_sessions){
 		$sessions_test = $o_rip_sessions;
 		$oid_desc = $alteon_real_server_desc;
 		$oid_addr = $alteon_real_server_addr;
-		$oid_tot_sess = $alteon_real_server_tot_sess;
+		$oid_sess = $alteon_real_server_cur_sess;
 		$oid_high_sess = $alteon_real_server_high_sess;
 		$oid_failures_sess = $alteon_real_server_failures_sess;
 		$oid_octets_sess = $alteon_real_server_octets_sess;
-		$counts_hist = $o_dirstore."/alteon_rip_counts_".$o_host;
 		$hcounts_hist = $o_dirstore."/alteon_rip_hcounts_".$o_host;
 		$failures_hist = $o_dirstore."/alteon_rip_failures_".$o_host;
 		$octets_hist = $o_dirstore."/alteon_rip_octets_".$o_host;
@@ -708,137 +832,105 @@ if ( $o_vip_sessions or $o_rip_sessions){
 	# Ids to check
 	my %hash_ids = get_id_list_to_check($o_list,$o_excl,\%hash_desc,\%hash_addr,$o_verb);
 	if ( $sessions_test eq "COUNTS" ){
-		verb("Get servers total sessions handled",1,$o_verb);
-		my %hash_tot_sessions = get_table_by_id($session,$oid_tot_sess,$o_verb);
-		# Now we have current data, we need old data
-		if ( -s $counts_hist ){
-			# We have history, it can work
-			my %hash_tot_sessions_old = get_file($counts_hist);
-			foreach my $id (keys %hash_ids) {
-				$delta_time = time - $hash_tot_sessions_old{$id}{TIME};
-				$count_sess = sprintf "%.2f",  ( ($hash_tot_sessions{$id} - $hash_tot_sessions_old{$id}{DATA}) / $delta_time );
-				# Push informations only for active Servers
-				if ( $hash_status{$id} == 2 ) {
-					# Formating output
-					$perfs .= " 'sess_".$hash_ids{$id}."'=".$count_sess.";;;;";
-					if ( $o_crit_opt and ($count_sess >= $o_crit_opt) ) {
-						$exit_code = "CRITICAL";
-						$output .= "sessions (num/s):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
-					}
-					elsif ( $o_warn_opt and ($count_sess >= $o_warn_opt) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "sessions (num/s):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
-					}
-					elsif ( $o_long_output ) {
-						$output .= "sessions (num/s):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
-					}
-				}
-			}
-		}
-		else {
-			# no data, put the current data in history files and get stuff next time
-			$exit_code = "OK";
-			$output = "NO USABLE DATA, maybe next time";
-		}
-		# Finally push new values
-		push_file($counts_hist, \%hash_tot_sessions);
+		verb("Get servers current sessions handled",1,$o_verb);
+		%hash_sessions = get_table_by_id($session,$oid_sess,$o_verb);
+		$history_file = $counts_hist;
+		$output_string = "sessions:";
+		$perf_string = "";
+		$unit_string = "";
 	}
-	if ( $sessions_test eq "HCOUNTS" ){
+	elsif ( $sessions_test eq "HCOUNTS" ){
 		verb("Get highest sessions handled",1,$o_verb);
-		my %hash_high_sessions = get_table_by_id($session,$oid_high_sess,$o_verb);
+		%hash_sessions = get_table_by_id($session,$oid_high_sess,$o_verb);
 		# Now we have current data, we need old data
-		if ( -s $hcounts_hist ){
-			# We have history, it can work
-			my %hash_high_sessions_old = get_file($hcounts_hist);
-			foreach my $id (keys %hash_ids) {
-				$delta_time = time - $hash_high_sessions_old{$id}{TIME};
-				$hcount_sess = sprintf "%.2f",  ( ($hash_high_sessions{$id} - $hash_high_sessions_old{$id}{DATA}) / $delta_time );
-				# Push informations only for active Servers
-				if ( $hash_status{$id} == 2 ) {
-					# Formating output
-					$perfs .= " 'hsess_".$hash_ids{$id}."'=".$hcount_sess.";;;;";
-					if ( $o_crit_opt and ($count_sess >= $o_crit_opt) ) {
-						$exit_code = "CRITICAL";
-						$output .= "sessions (num/s):".$hash_ids{$id}.":".$hcount_sess."(".$exit_code.") ";
-					}
-					elsif ( $o_warn_opt and ($count_sess >= $o_warn_opt) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "sessions (num/s):".$hash_ids{$id}.":".$hcount_sess."(".$exit_code.") ";
-					}
-					elsif ( $o_long_output ) {
-						$output .= "sessions (num/s):".$hash_ids{$id}.":".$hcount_sess."(".$exit_code.") ";
-					}
-				}
-			}
-		}
-		else {
-			# no data, put the current data in history files and get stuff next time
-			$exit_code = "OK";
-			$output = "NO USABLE DATA, maybe next time";
-		}
-		# Finally push new values
-		push_file($hcounts_hist, \%hash_high_sessions);
+		$history_file = $hcounts_hist;
+		$output_string = "highest sessions (num/s):";
+		#$perf_string = "hsess_";
+		$perf_string = "";
+		$unit_string = 0;
+		$max_bits = 4294967296;
 	}
 	elsif ( $sessions_test eq "FAILURES" ){
 		verb("Get servers failures",1,$o_verb);
-		my %hash_failures_sessions = get_table_by_id($session,$oid_failures_sess,$o_verb);
-		# Now we have current data, we need old data
-		if ( -s $failures_hist ){
-			# We have history, it can work
-			my %hash_failures_sessions_old = get_file($failures_hist);
-			foreach my $id (keys %hash_ids) {
-				$delta_time = time - $hash_failures_sessions_old{$id}{TIME};
-				$count_sess = sprintf "%.2f",  ( ($hash_failures_sessions{$id} - $hash_failures_sessions_old{$id}{DATA}) / $delta_time );
+		%hash_sessions = get_table_by_id($session,$oid_failures_sess,$o_verb);
+		$history_file = $failures_hist;
+		$output_string = "Failed sessions (num/s):";
+		$perf_string = "";
+		$unit_string = 0;
+		$max_bits = 4294967296;
+	}
+	elsif ( $sessions_test eq "TRAFFIC" ){
+		verb("Get servers octets transmitted",1,$o_verb);
+		%hash_sessions = get_table_by_id($session,$oid_octets_sess,$o_verb);
+		$history_file = $octets_hist;
+		$output_string = "Traffic sessions (b/s):";
+		$perf_string = "";
+		$max_bits = 18446744073709551616;
+	}
+	
+	if ( $sessions_test eq "COUNTS" ){
+		foreach my $id (keys %hash_ids) {
+			$count_sess = $hash_sessions{$id};
+			# Push informations only for active Servers
+			if ( $hash_status{$id} == 2 ) {
 				# Formating output
-				# Push informations only for active Servers
-				if ( $hash_status{$id} == 2 ) {
-					$perfs .= " 'failed_sessions_".$hash_ids{$id}."'=".$count_sess.";;;;";
-					if ( $o_crit_opt and ($count_sess >= $o_crit_opt) ) {
-						$exit_code = "CRITICAL";
-						$output .= "Failed sessions (num/s):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
-					}
-					elsif ( $o_warn_opt and ($count_sess >= $o_warn_opt) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "Failed sessions (num/s):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
-					}
-					elsif ( $o_long_output ) {
-						$output .= "Failed sessions (num/s):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
-					}
+				# - Replace space by underscores
+				$formated_data = $hash_ids{$id};
+				$formated_data =~ s/^\s+//;
+				$formated_data =~ s/\s+$//;
+				$formated_data =~ s/\s+/_/g;
+				$perfs .= " '".$perf_string.$formated_data."'=".$count_sess.$unit_string;
+				if ( $o_crit_opt and ($count_sess >= $o_crit_opt) ) {
+					$exit_code = "CRITICAL";
+					$output .= $output_string.$hash_ids{$id}.":".$count_sess.$unit_string." (".$exit_code.") ";
+				}
+				elsif ( $o_warn_opt and ($count_sess >= $o_warn_opt) ) {
+					$exit_code = "WARNING" if $exit_code eq "OK";
+					$output .= $output_string.$hash_ids{$id}.":".$count_sess.$unit_string." (".$exit_code.") ";
+				}
+				elsif ( $o_long_output ) {
+					$output .= $output_string.$hash_ids{$id}.":".$count_sess.$unit_string." (".$exit_code.") ";
 				}
 			}
 		}
-		else {
-			# no data, put the current data in history files and get stuff next time
-			$exit_code = "OK";
-			$output = "NO USABLE DATA, maybe next time";
-		}
-		# Finally push new values
-		push_file($failures_hist, \%hash_failures_sessions);
 	}
-	elsif ( $sessions_test eq "OCTETS" ){
-		verb("Get servers octets transmitted",1,$o_verb);
-		my %hash_octets_sessions = get_table_by_id($session,$oid_octets_sess,$o_verb);
+	else {
 		# Now we have current data, we need old data
-		if ( -s $octets_hist ){
+		if ( -s $history_file ){
 			# We have history, it can work
-			my %hash_octets_sessions_old = get_file($octets_hist);
+			%hash_sessions_old = get_file($history_file);
 			foreach my $id (keys %hash_ids) {
-				$delta_time = time - $hash_octets_sessions_old{$id}{TIME};
-				$count_sess = sprintf "%.2f",  ( ($hash_octets_sessions{$id} - $hash_octets_sessions_old{$id}{DATA}) / (1024 * 8 * $delta_time) );
+				$delta_time = time - $hash_sessions_old{$id}{TIME};
+				if ( $hash_sessions_old{$id}{DATA} > $hash_sessions{$id} ){
+					# SNMP Counter has been reseted
+					$delta_value = $max_bits - $hash_sessions_old{$id}{DATA} + $hash_sessions{$id};
+				}
+				else {
+					$delta_value = $hash_sessions{$id} - $hash_sessions_old{$id}{DATA};
+				}
+				$count_sess = $delta_value / $delta_time;
 				# Push informations only for active Servers
 				if ( $hash_status{$id} == 2 ) {
 					# Formating output
-					$perfs .= " 'traffic_".$hash_ids{$id}."'=".$count_sess."kbps;;;;";
+					# - Replace space by underscores
+					$formated_data = $hash_ids{$id};
+					$formated_data =~ s/^\s+//;
+					$formated_data =~ s/\s+$//;
+					$formated_data =~ s/\s+/_/g;
+					# For traffic data, I convert B/s in b/s
+					$count_sess =  $count_sess * $unit_coef if $sessions_test eq "TRAFFIC";
+					$count_sess = sprintf "%.2f", $count_sess;
+					$perfs .= " '".$perf_string.$formated_data."'=".$count_sess.$unit_string;
 					if ( $o_crit_opt and ($count_sess >= $o_crit_opt) ) {
 						$exit_code = "CRITICAL";
-						$output .= "Traffic (kbps):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
+						$output .= $output_string.$hash_ids{$id}.":".$count_sess.$unit_string." (".$exit_code.") ";
 					}
-					elsif ( $o_warn_opt and ($count_sess >= $o_warn_opt) and ($exit_code eq "OK") ) {
-						$exit_code = "WARNING";
-						$output .= "Traffic (kbps):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
+					elsif ( $o_warn_opt and ($count_sess >= $o_warn_opt) ) {
+						$exit_code = "WARNING" if $exit_code eq "OK";
+						$output .= $output_string.$hash_ids{$id}.":".$count_sess.$unit_string." (".$exit_code.") ";
 					}
 					elsif ( $o_long_output ) {
-						$output .= "Traffic (kbps):".$hash_ids{$id}.":".$count_sess."(".$exit_code.") ";
+						$output .= $output_string.$hash_ids{$id}.":".$count_sess.$unit_string." (".$exit_code.") ";
 					}
 				}
 			}
@@ -849,7 +941,7 @@ if ( $o_vip_sessions or $o_rip_sessions){
 			$output = "NO USABLE DATA, maybe next time";
 		}
 		# Finally push new values
-		push_file($octets_hist, \%hash_octets_sessions);
+		push_file($history_file, \%hash_sessions);
 	}
 	if ( ($exit_code eq "OK") and not $o_long_output ){ 
 		$output = "Sessions OK " if not $output;
@@ -983,6 +1075,16 @@ elsif ( $o_check_traffic ){
 	my $count_out = undef;
 	my $traffic_in_hist = $o_dirstore."/alteon_traffic_in_".$o_host;
 	my $traffic_out_hist = $o_dirstore."/alteon_traffic_out_".$o_host;
+	my $max_32bits = 4294967296;
+	my $delta_value = 0;
+	# Get thresholds
+	if ( $o_crit_opt ) {
+		$o_crit_opt = $o_crit_opt / 100 * $o_ifspeed;
+	}
+	if ( $o_warn_opt ) {
+		$o_warn_opt = $o_warn_opt / 100 * $o_ifspeed;
+	}
+	verb("Crit threshold:".$o_crit_opt.", Warn threshold:".$o_warn_opt,1,$o_verb); 
 	# Get Ports states
 	verb("Get Ports States",1,$o_verb);
 	my %hash_ports_states = get_table_by_id($session,$alteon_ports_states,$o_verb);
@@ -1000,20 +1102,32 @@ elsif ( $o_check_traffic ){
 			# Check only active interfaces
 			if ( $hash_ports_states{$port} == 2 ){
 				$delta_time = time - $hash_traffic_in_old{$port}{TIME};
-				$count_in = sprintf "%.2f",  ( ($hash_ports_traffic_in{$port} - $hash_traffic_in_old{$port}{DATA}) / (1024 * 8 * $delta_time) );
-				$count_out = sprintf "%.2f",  ( ($hash_ports_traffic_out{$port} - $hash_traffic_out_old{$port}{DATA}) / (1024 * 8 * $delta_time) );
+				if ( $hash_ports_traffic_in{$port} >= $hash_traffic_in_old{$port}{DATA} ){
+					$delta_value = $hash_ports_traffic_in{$port} - $hash_traffic_in_old{$port}{DATA};
+				}
+				else {
+					$delta_value = $max_32bits - $hash_traffic_in_old{$port}{DATA} + $hash_ports_traffic_in{$port};
+				}
+				$count_in = sprintf "%.2f",  ( $delta_value / $delta_time * $unit_coef);
+				if ( $hash_ports_traffic_out{$port} >= $hash_traffic_out_old{$port}{DATA} ){
+					$delta_value = $hash_ports_traffic_out{$port} - $hash_traffic_out_old{$port}{DATA};
+				}
+				else {
+					$delta_value = $max_32bits - $hash_traffic_out_old{$port}{DATA} + $hash_ports_traffic_out{$port};
+				}
+				$count_out = sprintf "%.2f",  ( $delta_value / $delta_time * $unit_coef);
 				# Formating output
-				$perfs .= " 'traffic_in_port_".$port."'=".$count_in."kbps;;;; 'traffic_out_port_".$port."'=".$count_out."kbps;;;;";
+				$perfs .= " 'traffic_in_port_".$port."'=".$count_in.$unit_string.";;;; 'traffic_out_port_".$port."'=".$count_out.$unit_string.";;;;";
 				if ( $o_crit_opt and ( ($count_in >= $o_crit_opt) or ($count_out >= $o_crit_opt)) ) {
 					$exit_code = "CRITICAL";
-					$output .= "traffic port ".$port." (".$count_in."kbps/".$count_out."kbps); ";
+					$output .= "traffic port ".$port.": CRITICAL (in:".$count_in.$unit_string." out:".$count_out.$unit_string."); ";
 				}
-				elsif ( $o_warn_opt and (($count_in >= $o_warn_opt) or ($count_out >= $o_warn_opt)) and ($exit_code eq "OK") ) {
-					$exit_code = "WARNING";
-					$output .= "traffic port ".$port." (".$count_in."kbps/".$count_out."kbps); ";
+				elsif ( $o_warn_opt and (($count_in >= $o_warn_opt) or ($count_out >= $o_warn_opt)) ) {
+					$exit_code = "WARNING" if $exit_code eq "OK";
+					$output .= "traffic port ".$port.": WARNING (in:".$count_in.$unit_string." out:".$count_out.$unit_string."); ";
 				}
 				elsif ( $o_long_output ) {
-					$output .= "traffic port ".$port." (".$count_in."kbps/".$count_out."kbps); ";
+					$output .= "traffic port ".$port.": (in:".$count_in.$unit_string." out:".$count_out.$unit_string."); ";
 				}
 			}
 		}
@@ -1039,6 +1153,16 @@ elsif ( $o_check_errors ){
 	my $errors_out_hist = $o_dirstore."/alteon_errors_out_".$o_host;
 	my $discards_in_hist = $o_dirstore."/alteon_discards_in_".$o_host;
 	my $discards_out_hist = $o_dirstore."/alteon_discards_out_".$o_host;
+	# Fix thresholds
+	my ($o_crit_opt_err,$o_crit_opt_disc) = (1000000,1000000);
+	my ($o_warn_opt_err,$o_warn_opt_disc) = (1000000,1000000);
+	if ( $o_crit_opt ){
+		($o_crit_opt_err,$o_crit_opt_disc) = split /,/, $o_crit_opt;
+	}
+	if ( $o_warn_opt ){
+		($o_warn_opt_err,$o_warn_opt_disc) = split /,/, $o_warn_opt;
+	}
+	verb("Crit err/disc: $o_crit_opt_err,$o_crit_opt_disc - Warn err/disc: $o_warn_opt_err,$o_warn_opt_disc",1,$o_verb);
 	# Get Ports states
 	verb("Get Ports States",1,$o_verb);
 	my %hash_ports_states = get_table_by_id($session,$alteon_ports_states,$o_verb);
@@ -1069,16 +1193,16 @@ elsif ( $o_check_errors ){
 				# Formating output
 				$perfs .= " 'errors_in_port_".$port."'=".$errors_in."/s;;;; 'errors_out_port_".$port."'=".$errors_out."/s;;;;";
 				$perfs .= " 'discards_in_port_".$port."'=".$discards_in."/s;;;; 'discards_out_port_".$port."'=".$discards_out."/s;;;;";
-				if ( $o_crit_opt and ( ($errors_in >= $o_crit_opt) or ($errors_out >= $o_crit_opt) or ($discards_in >= $o_crit_opt) or ($discards_out >= $o_crit_opt)) ) {
+				if ( $o_crit_opt and ( ($errors_in >= $o_crit_opt_err) or ($errors_out >= $o_crit_opt_err) or ($discards_in >= $o_crit_opt_disc) or ($discards_out >= $o_crit_opt_disc)) ) {
 					$exit_code = "CRITICAL";
-					$output .= "Port ".$port.": Errors(".$errors_in."ps/".$errors_out."ps) Discards(".$discards_in."ps/".$discards_out."ps); ";
+					$output .= "Port ".$port.": CRITICAL - Errors(".$errors_in."ps/".$errors_out."ps) Discards(".$discards_in."ps/".$discards_out."ps); ";
 				}
-				elsif ( $o_warn_opt and (($errors_in >= $o_warn_opt) or ($errors_out >= $o_warn_opt) or ($discards_in >= $o_warn_opt) or ($discards_out >= $o_warn_opt)) and ($exit_code eq "OK") ) {
-					$exit_code = "WARNING";
+				elsif ( $o_warn_opt and (($errors_in >= $o_warn_opt_err) or ($errors_out >= $o_warn_opt_err) or ($discards_in >= $o_warn_opt_disc) or ($discards_out >= $o_warn_opt_disc)) ) {
+					$exit_code = "WARNING" if $exit_code eq "OK";
 					$output .= "Port ".$port.": Errors(".$errors_in."ps/".$errors_out."ps) Discards(".$discards_in."ps/".$discards_out."ps); ";
 				}
 				elsif ( $o_long_output ) {
-					$output .= "Port ".$port.": Errors(".$errors_in."ps/".$errors_out."ps) Discards(".$discards_in."ps/".$discards_out."ps); ";
+					$output .= "Port ".$port.": WARNING - Errors(".$errors_in."ps/".$errors_out."ps) Discards(".$discards_in."ps/".$discards_out."ps); ";
 				}
 			}
 		}
@@ -1097,8 +1221,12 @@ elsif ( $o_check_errors ){
 		$output = "Errors/Discards OK";
 	}
 }
+elsif ( $o_check_status ){
+	
+}
 else {
 	# you shouldn't be here.... in the twilight zone
+	
 }
 
 print "$exit_code - $output | $perfs\n";
